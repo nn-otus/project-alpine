@@ -1,0 +1,15 @@
+---
+- name: restart nftables
+  systemd:
+    name: nftables
+    state: restarted
+
+- name: restart keepalived
+  systemd:
+    name: keepalived
+    state: restarted
+
+- name: restart conntrackd
+  systemd:
+    name: conntrackd
+    state: restarted

@@ -1,0 +1,54 @@
+---
+- name: Установка пакетов (Debian)
+  apt:
+    name: [iptables, iptables-persistent, ethtool, iproute2]
+    state: present
+    update_cache: yes
+
+- name: Включение IP Forwarding (Ядро)
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    sysctl_set: yes
+    state: present
+    reload: yes
+
+- name: Отключение RP_FILTER (для корректной работы нескольких eth)
+  sysctl:
+    name: "{{ item }}"
+    value: '0'
+    reload: yes
+  loop:
+    - net.ipv4.conf.all.rp_filter
+    - net.ipv4.conf.default.rp_filter
+    - net.ipv4.conf.eth2.rp_filter
+    - net.ipv4.conf.eth3.rp_filter
+
+- name: Настройка правил IPTABLES (NAT и Forward)
+  shell: |
+    iptables -F
+    iptables -t nat -F
+    iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+    iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    iptables -A FORWARD -j ACCEPT
+  # Используем shell для надежности при первом запуске
+
+- name: Добавление IP шлюза 10.0.10.1 (DMZ)
+  shell: "ip addr add 10.0.10.1/24 dev eth2"
+  register: ip_res
+  failed_when: "ip_res.rc != 0 and 'already assigned' not in ip_res.stderr"
+  changed_when: "ip_res.rc == 0"
+
+- name: Добавление IP шлюза 10.0.20.1 (App Zone)
+  shell: "ip addr add 10.0.20.1/24 dev eth3"
+  register: ip_res_app
+  failed_when: "ip_res_app.rc != 0 and 'already assigned' not in ip_res_app.stderr"
+  changed_when: "ip_res_app.rc == 0"
+
+- name: Отключение Checksum Offloading (Критично для VirtualBox на i7-2600)
+  shell: "ethtool -K {{ item }} tx off rx off"
+  loop: [eth0, eth2, eth3]
+  ignore_errors: yes
+
+- name: Сохранение правил IPTABLES (Debian way)
+  shell: "netfilter-persistent save"

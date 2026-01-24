@@ -1,0 +1,14 @@
+---
+- name: Конфигурация сетевой инфраструктуры
+  hosts: routers
+  become: true
+  roles:
+    - routers
+
+- name: Настройка узлов (Front & Back)
+  hosts: frontends, backends
+  become: true
+  roles:
+    - role: common
+      # Передаем правильный шлюз в зависимости от группы
+      gateway_ip: "{{ '10.0.10.1' if 'frontends' in group_names else '10.0.20.1' }}"

@@ -1,0 +1,45 @@
+---
+- name: Установка необходимых пакетов в Alpine
+  apk:
+    name: [ethtool, iproute2]
+    state: present
+
+- name: Настройка сетевых интерфейсов (/etc/network/interfaces)
+  # В Alpine конфигурация должна быть персистентной
+  copy:
+    dest: /etc/network/interfaces
+    content: |
+      auto lo
+      iface lo inet loopback
+
+      auto eth0
+      iface eth0 inet dhcp
+
+      auto eth1
+      iface eth1 inet static
+          address {{ ansible_all_ipv4_addresses | select('match', '^10\.') | first }}
+          netmask 255.255.255.0
+          gateway {{ gateway_ip }}
+          post-up ethtool -K eth1 tx off rx off
+  register: network_config
+
+- name: Перезапуск сети (OpenRC)
+  service:
+    name: networking
+    state: restarted
+  when: network_config.changed
+
+- name: Корректировка метрик маршрутов (чтобы не потерять SSH)
+  # Устанавливаем приоритет для нашего шлюза
+  shell: |
+    ip route add default via {{ gateway_ip }} dev eth1 metric 100
+    ip route del default dev eth0
+  ignore_errors: yes
+  changed_when: false
+
+- name: Настройка DNS
+  copy:
+    dest: /etc/resolv.conf
+    content: |
+      nameserver 8.8.8.8
+      nameserver 1.1.1.1

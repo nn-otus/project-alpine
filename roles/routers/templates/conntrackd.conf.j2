@@ -1,0 +1,28 @@
+Sync {
+    Mode FTFW {
+        # Режим надежной синхронизации сессий
+    }
+    UDP {
+        # Настройка на базе сети управления (eth1)
+        IPv4_address {{ ansible_facts['eth1']['ipv4']['address'] }}
+        IPv4_Destination_Address {{ '192.168.56.12' if inventory_hostname == 'router-1' else '192.168.56.11' }}
+        Port 3780
+        Interface eth1
+    }
+}
+
+General {
+    Nice -20
+    LogFile on
+    UNIX {
+        Path /var/run/conntrackd.ctl
+    }
+    Filter From Userspace {
+        Protocol TCP
+        Address Ignore {
+            IPv4_address 127.0.0.1
+            IPv4_address 192.168.56.11
+            IPv4_address 192.168.56.12
+        }
+    }
+}

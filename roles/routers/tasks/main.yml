@@ -1,0 +1,66 @@
+---
+- name: Установка необходимых пакетов
+  apt:
+    name: [nftables, keepalived, conntrackd, ethtool, iproute2]
+    state: present
+    update_cache: yes
+
+- name: Настройка sysctl (Forwarding и Non-local bind)
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    reload: yes
+  loop:
+    - { name: 'net.ipv4.ip_forward', value: '1' }
+    - { name: 'net.ipv4.ip_nonlocal_bind', value: '1' }
+    - { name: 'net.ipv4.conf.all.rp_filter', value: '0' }
+    - { name: 'net.ipv4.conf.default.rp_filter', value: '0' }
+
+- name: Копирование конфигурации nftables
+  template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: nft -c -f %s
+  notify: restart nftables
+
+- name: Копирование конфигурации Keepalived
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+  notify: restart keepalived
+
+- name: Копирование конфигурации conntrackd
+  template:
+    src: conntrackd.conf.j2
+    dest: /etc/conntrackd/conntrackd.conf
+  notify: restart conntrackd
+
+- name: Создание скрипта notify для conntrackd
+  copy:
+    dest: /etc/keepalived/notify_conntrackd.sh
+    content: |
+      #!/bin/bash
+      STATE=$3
+      case $STATE in
+        "MASTER") conntrackd -c; conntrackd -f; conntrackd -R ;;
+        "BACKUP"|"FAULT") conntrackd -t; conntrackd -n ;;
+      esac
+    mode: '0755'
+
+- name: Отключение Checksum Offloading (VirtualBox fix)
+  lineinfile:
+    path: /etc/network/interfaces
+    insertafter: "iface {{ item }} inet static"
+    line: "    post-up ethtool -K {{ item }} tx off rx off"
+  loop: [eth0, eth2, eth3, eth4]
+  ignore_errors: yes
+
+- name: Включение и запуск сервисов
+  systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: started
+  loop: [nftables, keepalived, conntrackd]
